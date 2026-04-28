@@ -85,6 +85,16 @@ func TestNoStops(t *testing.T) {
 	}
 }
 
+func TestTwoOptNeverLengthensTour(t *testing.T) {
+	stops := memphisStops()
+	// Deliberately bad order: alternate east and west.
+	bad := []Stop{stops[5], stops[1], stops[2], stops[4], stops[0], stops[3]}
+	improved := TwoOpt(depot, bad)
+	if TourLength(depot, improved) > TourLength(depot, bad) {
+		t.Fatalf("2-opt lengthened the tour: %.2f > %.2f", TourLength(depot, improved), TourLength(depot, bad))
+	}
+}
+
 func TestDistanceMemphisToNashville(t *testing.T) {
 	d := Distance(orb.Point{-90.0490, 35.1495}, orb.Point{-86.7816, 36.1627})
 	if d < 310 || d > 320 {

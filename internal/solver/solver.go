@@ -1,7 +1,7 @@
 // Package solver builds pickup and delivery routes for a terminal's day.
 //
-// The planner is a nearest-neighbour construction split into vehicle loads
-// by capacity. It is deliberately
+// The production planner is a nearest-neighbour construction followed by a
+// 2-opt pass, split into vehicle loads by capacity. It is deliberately
 // simple: city P&D routes are 8 to 25 stops, and dispatchers re-sequence by
 // hand anyway. Quality is measured against the hand-built routes in the
 // weekly planning report, not against an exact solver.
@@ -37,6 +37,8 @@ type Options struct {
 	CapacityLbs float64
 	// MaxStops caps stops per route. Zero means unlimited.
 	MaxStops int
+	// Improve runs 2-opt on each route after construction.
+	Improve bool
 }
 
 var (
@@ -91,6 +93,9 @@ func NearestNeighbour(depot orb.Point, stops []Stop, opts Options) ([]Route, err
 			route.LoadLbs += stops[next].WeightLbs
 			pos = stops[next].Location
 		}
+		if opts.Improve {
+			route.Stops = TwoOpt(depot, route.Stops)
+		}
 		route.DistanceKm = TourLength(depot, route.Stops)
 		routes = append(routes, route)
 	}
@@ -107,4 +112,39 @@ func TourLength(depot orb.Point, stops []Stop) float64 {
 		total += Distance(stops[i-1].Location, stops[i].Location)
 	}
 	return total + Distance(stops[len(stops)-1].Location, depot)
+}
+
+// TwoOpt reverses segments while doing so shortens the closed tour.
+func TwoOpt(depot orb.Point, stops []Stop) []Stop {
+	if len(stops) < 3 {
+		return stops
+	}
+	tour := append([]Stop(nil), stops...)
+	point := func(i int) orb.Point {
+		if i < 0 || i >= len(tour) {
+			return depot
+		}
+		return tour[i].Location
+	}
+
+	for improved := true; improved; {
+		improved = false
+		for i := 0; i < len(tour)-1; i++ {
+			for j := i + 1; j < len(tour); j++ {
+				before := Distance(point(i-1), point(i)) + Distance(point(j), point(j+1))
+				after := Distance(point(i-1), point(j)) + Distance(point(i), point(j+1))
+				if after < before-1e-9 {
+					reverse(tour[i : j+1])
+					improved = true
+				}
+			}
+		}
+	}
+	return tour
+}
+
+func reverse(s []Stop) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
 }
