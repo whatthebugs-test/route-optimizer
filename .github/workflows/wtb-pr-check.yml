@@ -1,0 +1,37 @@
+name: whatthebugs
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  wtb-pr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # merge base needs the target branch
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install -g @cyclonedx/cdxgen@12    # pin: same version both SBOMs
+      - name: SBOM (PR head)
+        run: cdxgen -o /tmp/sbom.after.json .
+      - name: SBOM (merge base)
+        run: |
+          git checkout -q "$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          cdxgen -o /tmp/sbom.before.json .
+      - name: what the bugs — PR delta check
+        env:
+          WT_API_KEY: ${{ secrets.WT_API_KEY }}
+        run: |
+          curl -sL https://whatthebugs.com/wtb_pr_check.py -o /tmp/wtb_pr_check.py
+          python3 /tmp/wtb_pr_check.py /tmp/sbom.before.json /tmp/sbom.after.json \
+            --report /tmp/wtb_comment.md
+      - name: comment on the PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --body-file /tmp/wtb_comment.md --edit-last \
+            || gh pr comment "$PR" --body-file /tmp/wtb_comment.md
